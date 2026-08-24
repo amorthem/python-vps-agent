@@ -1,10 +1,12 @@
+import os
 from flask import Flask, jsonify, request
 import psutil
 
 app = Flask(__name__)
 
-# กำหนด Token ที่ต้องส่งมาด้วย
-API_TOKEN = "your_secret_token_here"
+# ดึงค่า API_TOKEN จาก Environment Variable
+# หากหาไม่เจอ จะใช้ค่า default 'fallback_secret_token'
+API_TOKEN = os.getenv("API_TOKEN", "fallback_secret_token")
 
 @app.route('/metrics', methods=['GET'])
 def get_metrics():
