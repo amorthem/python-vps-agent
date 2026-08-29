@@ -33,7 +33,7 @@ docker compose up -d --build
 
 ### 4. Test Request
 ```bash
-curl "http://localhost:8000/metrics?token=your_super_secret_token_12345"
+curl "http://localhost:5000/metrics?token=your_super_secret_token_12345"
 ```
 
 ## Response
