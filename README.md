@@ -18,7 +18,7 @@
 
 ```bash
 git clone https://github.com/amorthem/python-vps-agent
-cd vps-metrics-api
+cd python-vps-agent
 ```
 
 ### 2. Configure Your Secret Token
