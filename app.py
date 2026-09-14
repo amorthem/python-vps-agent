@@ -11,6 +11,26 @@ app = Flask(__name__)
 # หากหาไม่เจอ จะใช้ค่า default 'fallback_secret_token'
 API_TOKEN = os.getenv("API_TOKEN", "fallback_secret_token")
 
+def get_docker_executable():
+    # 1. เช็กผ่าน system PATH ตามปกติ
+    docker_bin = shutil.which('docker')
+    if docker_bin:
+        return docker_bin
+
+    # 2. หากไม่พบใน system PATH ให้เช็กจาก System Direct Paths (รวมถึง /usr/bin/docker)
+    known_paths = [
+        '/usr/bin/docker',          # Ubuntu / Debian default path
+        '/usr/local/bin/docker',    # Custom / Manual install
+        '/snap/bin/docker',         # Ubuntu Snap install
+        '/bin/docker'
+    ]
+
+    for path in known_paths:
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+
+    return None
+
 def check_auth():
     token = request.args.get('token')
     if not token or token != API_TOKEN:
@@ -44,28 +64,26 @@ def get_metrics():
 @app.route('/docker-stats', methods=['GET'])
 def get_docker_stats():
     if not check_auth():
-        return jsonify({
-            "status": "error",
-            "message": "Unauthorized: Invalid or missing token"
-        }), 401
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
-    # 1. ตรวจสอบว่ามีคำสั่ง docker ในเครื่องหรือไม่
-    if not shutil.which('docker'):
+    docker_bin = get_docker_executable()
+
+    # หากเช็กทุก path แล้วยังไม่เจอ
+    if not docker_bin:
         return jsonify({
             "status": "error",
             "message": "ไม่พบคำสั่ง docker ในระบบ"
         }), 404
 
     try:
-        # 2. เรียกใช้คำสั่ง docker stats
+        # ใช้ docker_bin (ที่เป็น Full Path เช่น /usr/bin/docker) ในการรัน
         result = subprocess.run(
-            ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
+            [docker_bin, "stats", "--no-stream", "--format", "{{json .}}"],
             capture_output=True,
             text=True,
             check=True
         )
 
-        # 3. แปลงผลลัพธ์จาก string JSON (บรรทัดต่อบรรทัด) ให้เป็น Python List
         containers = []
         for line in result.stdout.strip().split('\n'):
             if line:
@@ -77,10 +95,9 @@ def get_docker_stats():
         })
 
     except subprocess.CalledProcessError as e:
-        # เกิดกรณีที่รัน docker ได้ แต่มี error (เช่น Docker daemon ไม่ได้เปิด หรือไม่มีสิทธิ์เข้าถึง socket)
         return jsonify({
             "status": "error",
-            "message": "ไม่สามารถดึงข้อมูล Docker ได้ (โปรดเช็กว่า Docker Daemon ทำงานอยู่หรือไม่)",
+            "message": "ไม่สามารถดึงข้อมูล Docker ได้ (โปรดเช็กว่า Docker service กำลังทำงานอยู่หรือไม่)",
             "details": e.stderr.strip()
         }), 500
 
