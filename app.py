@@ -66,17 +66,18 @@ def get_docker_stats():
     if not check_auth():
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
-    docker_bin = get_docker_executable()
+    # ระบุ Path ตรงๆ โดยไม่ผ่าน shutil.which
+    docker_bin = '/usr/bin/docker'
 
-    # หากเช็กทุก path แล้วยังไม่เจอ
-    if not docker_bin:
+    # ตรวจสอบเบื้องต้นว่าไฟล์มีอยู่จริงใน Process นี้ไหม
+    if not os.path.exists(docker_bin):
         return jsonify({
             "status": "error",
-            "message": "ไม่พบคำสั่ง docker ในระบบ"
+            "message": f"Process มองไม่เห็นไฟล์ที่ {docker_bin} (อาจเพราะรันอยู่ใน Container หรือติด Sandbox)",
+            "current_path_env": os.getenv("PATH")
         }), 404
 
     try:
-        # ใช้ docker_bin (ที่เป็น Full Path เช่น /usr/bin/docker) ในการรัน
         result = subprocess.run(
             [docker_bin, "stats", "--no-stream", "--format", "{{json .}}"],
             capture_output=True,
@@ -94,12 +95,17 @@ def get_docker_stats():
             "data": containers
         })
 
+    except FileNotFoundError:
+        return jsonify({
+            "status": "error",
+            "message": "OS แจ้งว่า FileNotFoundError เมื่อสั่งรัน /usr/bin/docker"
+        }), 404
     except subprocess.CalledProcessError as e:
         return jsonify({
             "status": "error",
-            "message": "ไม่สามารถดึงข้อมูล Docker ได้ (โปรดเช็กว่า Docker service กำลังทำงานอยู่หรือไม่)",
+            "message": "พบคำสั่ง docker แต่รันไม่ผ่าน (อาจติดสิทธิ์ Docker Socket)",
             "details": e.stderr.strip()
         }), 500
-
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
