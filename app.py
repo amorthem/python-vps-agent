@@ -11,26 +11,6 @@ app = Flask(__name__)
 # หากหาไม่เจอ จะใช้ค่า default 'fallback_secret_token'
 API_TOKEN = os.getenv("API_TOKEN", "fallback_secret_token")
 
-def get_docker_executable():
-    # 1. เช็กผ่าน system PATH ตามปกติ
-    docker_bin = shutil.which('docker')
-    if docker_bin:
-        return docker_bin
-
-    # 2. หากไม่พบใน system PATH ให้เช็กจาก System Direct Paths (รวมถึง /usr/bin/docker)
-    known_paths = [
-        '/usr/bin/docker',          # Ubuntu / Debian default path
-        '/usr/local/bin/docker',    # Custom / Manual install
-        '/snap/bin/docker',         # Ubuntu Snap install
-        '/bin/docker'
-    ]
-
-    for path in known_paths:
-        if os.path.exists(path) and os.access(path, os.X_OK):
-            return path
-
-    return None
-
 def check_auth():
     token = request.args.get('token')
     if not token or token != API_TOKEN:
@@ -64,47 +44,49 @@ def get_metrics():
 @app.route('/docker-stats', methods=['GET'])
 def get_docker_stats():
     if not check_auth():
-        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        return jsonify({
+            "status": "error",
+            "message": "Unauthorized"
+        }), 401
 
-    # ระบุ Path ตรงๆ โดยไม่ผ่าน shutil.which
     docker_bin = '/usr/bin/docker'
 
-    # ตรวจสอบเบื้องต้นว่าไฟล์มีอยู่จริงใน Process นี้ไหม
+    # ตรวจสอบว่าได้ทำการ mount binary เข้ามาใน Container แล้วหรือยัง
     if not os.path.exists(docker_bin):
         return jsonify({
             "status": "error",
-            "message": f"Process มองไม่เห็นไฟล์ที่ {docker_bin} (อาจเพราะรันอยู่ใน Container หรือติด Sandbox)",
-            "current_path_env": os.getenv("PATH")
+            "message":
+                "ไม่พบ /usr/bin/docker ใน Container (โปรด mount -v"
+                " /usr/bin/docker:/usr/bin/docker)"
         }), 404
 
     try:
-        result = subprocess.run(
-            [docker_bin, "stats", "--no-stream", "--format", "{{json .}}"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run([
+            docker_bin,
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{json .}}",
+        ],
+                                capture_output=True,
+                                text=True,
+                                check=True)
 
         containers = []
         for line in result.stdout.strip().split('\n'):
             if line:
                 containers.append(json.loads(line))
 
-        return jsonify({
-            "status": "success",
-            "data": containers
-        })
+        return jsonify({"status": "success", "data": containers})
 
-    except FileNotFoundError:
-        return jsonify({
-            "status": "error",
-            "message": "OS แจ้งว่า FileNotFoundError เมื่อสั่งรัน /usr/bin/docker"
-        }), 404
     except subprocess.CalledProcessError as e:
+        # หากพบ error ตรงนี้ มักเกิดจากไม่ได้ mount /var/run/docker.sock
         return jsonify({
             "status": "error",
-            "message": "พบคำสั่ง docker แต่รันไม่ผ่าน (อาจติดสิทธิ์ Docker Socket)",
-            "details": e.stderr.strip()
+            "message":
+                "ไม่สามารถเข้าถึง Docker Daemon ได้ (โปรดตรวจสอบการ mount"
+                " /var/run/docker.sock)",
+            "details": e.stderr.strip(),
         }), 500
     
 if __name__ == '__main__':

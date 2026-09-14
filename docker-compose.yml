@@ -5,6 +5,11 @@ services:
     restart: always
     ports:
       - "5000:5000"
+    volumes:
+      # Mount Docker Socket เพื่อคุยกับ Daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Binary Docker CLI เข้าไปใน Container
+      - /usr/bin/docker:/usr/bin/docker
     pid: host
     env_file:
       - .env
